@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Next.js
+.next/
+out/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma
+prisma/migrations/**/migration_lock.toml
+
+# Build output
+dist/
+build/
+
+# User-uploaded avatars
+public/avatars/
+
+# Test coverage
+coverage/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Vercel
+.vercel/
+
+# Local Netlify folder
+.netlify
+
+# Transient deploy scripts (may contain DB credentials) — never commit
+deploy/
+
+# Netlify edge lockfile (machine-generated)
+deno.lock
+
+# One-off backfill route (remove after use)
+src/app/api/dev/
+.playwright-mcp/
+.impeccable/

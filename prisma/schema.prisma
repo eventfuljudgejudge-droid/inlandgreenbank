@@ -1,0 +1,272 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CUSTOMER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  LOCKED
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+}
+
+enum AccountStatus {
+  ACTIVE
+  FROZEN
+  RECEIVE_ONLY
+  CLOSED
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+enum LedgerAccountType {
+  SYSTEM
+  CUSTOMER
+}
+
+enum TransactionType {
+  FUNDING
+  ADJUSTMENT
+  TRANSFER
+  REVERSAL
+  FEE
+}
+
+enum TransactionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  BLOCKED
+  REVERSED
+}
+
+enum TransferStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+  BLOCKED
+  REVERSED
+}
+
+enum TransferType {
+  LOCAL
+  INTERNATIONAL
+}
+
+model User {
+  id                  String        @id @default(cuid())
+  username            String?       @unique
+  email               String        @unique
+  name                String
+  passwordHash        String
+  avatarUrl           String?
+  avatarData          Bytes?
+  securityQuestion    String?
+  securityAnswerHash  String?
+  role                Role          @default(CUSTOMER)
+  status              UserStatus    @default(ACTIVE)
+  accounts            Account[]
+  payees              Payee[]
+  auditLogs           AuditLog[]    @relation("ActorLogs")
+  transactions        Transaction[] @relation("CreatedTransactions")
+  createdTransfers    Transfer[]    @relation("CreatedTransfers")
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
+}
+
+model Account {
+  id                String          @id @default(cuid())
+  userId            String
+  accountNumber     String          @unique
+  iban              String?         @unique
+  bic               String?
+  type              AccountType
+  status            AccountStatus   @default(ACTIVE)
+  nickname          String?
+  currency          String          @default("EUR")
+  balanceCents      BigInt          @default(0)
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ledgerAccount     LedgerAccount?
+  transactions      Transaction[]
+  transfersSent     Transfer[]      @relation("TransferSender")
+  transfersReceived Transfer[]      @relation("TransferRecipient")
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([userId])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  action    String
+  target    String?
+  reference String?
+  metadata  Json?
+  actor     User?    @relation("ActorLogs", fields: [actorId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([actorId])
+  @@index([createdAt])
+}
+
+model Payee {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  iban      String
+  bic       String?
+  bankName  String?
+  currency  String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, iban])
+  @@index([userId])
+}
+
+model Ledger {
+  id           String             @id @default(cuid())
+  name         String             @unique
+  code         String             @unique
+  accounts     LedgerAccount[]
+  transactions LedgerTransaction[]
+  createdAt    DateTime           @default(now())
+}
+
+model LedgerAccount {
+  id               String             @id @default(cuid())
+  ledgerId         String
+  ledger           Ledger             @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  code             String             @unique
+  name             String
+  type             LedgerAccountType
+  customerAccountId String?           @unique
+  customerAccount  Account?           @relation(fields: [customerAccountId], references: [id], onDelete: SetNull)
+  entries          LedgerEntry[]
+  createdAt        DateTime           @default(now())
+
+  @@index([ledgerId])
+}
+
+model LedgerTransaction {
+  id          String         @id @default(cuid())
+  ledgerId    String
+  ledger      Ledger         @relation(fields: [ledgerId], references: [id], onDelete: Cascade)
+  reference   String         @unique
+  description String
+  entries     LedgerEntry[]
+  transaction Transaction?
+  createdAt   DateTime       @default(now())
+
+  @@index([ledgerId])
+}
+
+model LedgerEntry {
+  id                  String            @id @default(cuid())
+  ledgerTransactionId String
+  ledgerAccountId     String
+  direction           LedgerDirection
+  amountCents         BigInt
+  ledgerTransaction   LedgerTransaction @relation(fields: [ledgerTransactionId], references: [id], onDelete: Cascade)
+  ledgerAccount       LedgerAccount     @relation(fields: [ledgerAccountId], references: [id], onDelete: Cascade)
+  createdAt           DateTime          @default(now())
+
+  @@index([ledgerTransactionId])
+  @@index([ledgerAccountId])
+}
+
+model Transaction {
+  id                 String            @id @default(cuid())
+  reference          String            @unique
+  type               TransactionType
+  status             TransactionStatus
+  amountCents        BigInt
+  currency           String            @default("EUR")
+  description        String
+  failureReason      String?
+  idempotencyKey     String?           @unique
+  accountId          String?
+  account            Account?          @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  createdById        String?
+  createdBy          User?             @relation("CreatedTransactions", fields: [createdById], references: [id], onDelete: SetNull)
+  ledgerTransaction  LedgerTransaction? @relation(fields: [ledgerTransactionId], references: [id], onDelete: SetNull)
+  ledgerTransactionId String?          @unique
+  transfer           Transfer?         @relation("TransferTransaction")
+  createdAt          DateTime          @default(now())
+  completedAt        DateTime?
+  updatedAt          DateTime          @updatedAt
+
+  @@index([accountId])
+  @@index([createdById])
+  @@index([status])
+}
+
+model Transfer {
+  id                 String         @id @default(cuid())
+  reference          String         @unique
+  type               TransferType   @default(LOCAL)
+  senderAccountId    String
+  recipientAccountId String?
+  amountCents        BigInt
+  currency           String         @default("EUR")
+  status             TransferStatus @default(PENDING)
+  description        String?
+  recipientName      String?
+  recipientIban      String?
+  recipientBic       String?
+  recipientBankName  String?
+  recipientCurrency  String?
+  fxRate             Decimal?
+  convertedAmountCents BigInt?
+  idempotencyKey     String?        @unique
+  createdByUserId    String
+  failureCode        String?
+  failureReason      String?
+  blockedReason      String?
+  blockedBy          String?
+  reversedByUserId   String?
+  reversedAt         DateTime?
+  reversalReason     String?
+  reversalReference  String?        @unique
+  transactionId      String?        @unique
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  completedAt        DateTime?
+  blockedAt          DateTime?
+  failedAt           DateTime?
+
+  senderAccount    Account  @relation("TransferSender", fields: [senderAccountId], references: [id])
+  recipientAccount Account? @relation("TransferRecipient", fields: [recipientAccountId], references: [id], onDelete: SetNull)
+  createdByUser    User     @relation("CreatedTransfers", fields: [createdByUserId], references: [id])
+  transaction      Transaction? @relation("TransferTransaction", fields: [transactionId], references: [id])
+
+  @@index([senderAccountId])
+  @@index([recipientAccountId])
+  @@index([status])
+  @@index([reference])
+  @@index([createdAt])
+  @@index([idempotencyKey])
+  @@index([createdByUserId])
+  @@index([reversalReference])
+}
